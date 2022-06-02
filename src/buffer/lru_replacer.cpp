@@ -18,12 +18,37 @@ LRUReplacer::LRUReplacer(size_t num_pages) {}
 
 LRUReplacer::~LRUReplacer() = default;
 
-bool LRUReplacer::Victim(frame_id_t *frame_id) { return false; }
+bool LRUReplacer::Victim(frame_id_t *frame_id) {
+    std::lock_guard<std::mutex> lock{latch_};
+    if (frame_stroage_.empty()) {
+        *frame_id = 0;
+        return false;
+    }
 
-void LRUReplacer::Pin(frame_id_t frame_id) {}
+    *frame_id = frame_stroage_.front();
+    frame_stroage_.pop_front();
+    index_.erase(*frame_id);
+    return true;
+}
 
-void LRUReplacer::Unpin(frame_id_t frame_id) {}
+void LRUReplacer::Pin(frame_id_t frame_id) {
+    std::lock_guard<std::mutex> lock{latch_};
+    if (index_.count(frame_id)) {
+        frame_stroage_.erase(index_[frame_id]);
+        index_.erase(frame_id);
+    }
+}
 
-size_t LRUReplacer::Size() { return 0; }
+void LRUReplacer::Unpin(frame_id_t frame_id) {
+    std::lock_guard<std::mutex> lock{latch_};
+    if (!index_.count(frame_id)) {
+        frame_stroage_.emplace_back(frame_id);
+        index_[frame_id] = std::prev(frame_stroage_.end());
+    }
+}
+
+size_t LRUReplacer::Size() {
+    return frame_stroage_.size();
+}
 
 }  // namespace bustub
