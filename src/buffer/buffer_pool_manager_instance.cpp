@@ -50,11 +50,11 @@ BufferPoolManagerInstance::~BufferPoolManagerInstance() {
 bool BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) {
   // Make sure you call DiskManager::WritePage!
   std::shared_lock<std::shared_mutex> lock_page{pageframe_table_latch_};
-  return FlushPgImp_(page_id);
+  return FlushPgLgc(page_id);
 }
 
-bool BufferPoolManagerInstance::FlushPgImp_(page_id_t page_id) {
-  if (page_id == INVALID_PAGE_ID || !page_table_.count(page_id)) {
+bool BufferPoolManagerInstance::FlushPgLgc(page_id_t page_id) {
+  if (page_id == INVALID_PAGE_ID || page_table_.count(page_id) == 0) {
     return false;
   }
   disk_manager_->WritePage(page_id, pages_[page_table_[page_id]].data_);
@@ -64,11 +64,11 @@ bool BufferPoolManagerInstance::FlushPgImp_(page_id_t page_id) {
 void BufferPoolManagerInstance::FlushAllPgsImp() {
   // You can do it!
   std::shared_lock lock_page{pageframe_table_latch_};
-  FlushAllPgsImp_();
+  FlushAllPgsLgc();
 }
 
-void BufferPoolManagerInstance::FlushAllPgsImp_() {
-  for (auto &[_, frame_id]: page_table_) {
+void BufferPoolManagerInstance::FlushAllPgsLgc() {
+  for (auto &[_, frame_id] : page_table_) {
     Page *page = pages_ + frame_id;
     disk_manager_->WritePage(page->page_id_, page->data_);
   }
@@ -81,12 +81,12 @@ Page *BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) {
   // 3.   Update P's metadata, zero out memory and add P to the page table.
   // 4.   Set the page ID output parameter. Return a pointer to P.
   std::scoped_lock lock_page_free{pageframe_table_latch_, free_list_latch_};
-  return NewPgImp_(page_id);
+  return NewPgLgc(page_id);
 }
 
-Page *BufferPoolManagerInstance::NewPgImp_(page_id_t *page_id) {
+Page *BufferPoolManagerInstance::NewPgLgc(page_id_t *page_id) {
   frame_id_t free_frame;
-  if (!GetFreeFrame_(&free_frame)) {
+  if (!GetFreeFrameLgc(&free_frame)) {
     return nullptr;
   }
 
@@ -111,11 +111,11 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
   // 3.     Delete R from the page table and insert P.
   // 4.     Update P's metadata, read in the page content from disk, and then return a pointer to P.
   std::scoped_lock lock_page_free{pageframe_table_latch_, free_list_latch_};
-  return FetchPgImp_(page_id);
+  return FetchPgLgc(page_id);
 }
 
-Page *BufferPoolManagerInstance::FetchPgImp_(page_id_t page_id) {
-  if (page_table_.count(page_id)) {
+Page *BufferPoolManagerInstance::FetchPgLgc(page_id_t page_id) {
+  if (page_table_.count(page_id) != 0) {
     frame_id_t frame_id = page_table_[page_id];
     Page *page = pages_ + frame_id;
     page->pin_count_++;
@@ -125,7 +125,7 @@ Page *BufferPoolManagerInstance::FetchPgImp_(page_id_t page_id) {
   }
 
   frame_id_t free_frame;
-  if (!GetFreeFrame_(&free_frame)) {
+  if (!GetFreeFrameLgc(&free_frame)) {
     return nullptr;
   }
 
@@ -148,15 +148,15 @@ bool BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) {
   // 2.   If P exists, but has a non-zero pin-count, return false. Someone is using the page.
   // 3.   Otherwise, P can be deleted. Remove P from the page table, reset its metadata and return it to the free list.
   std::scoped_lock lock_page_free{pageframe_table_latch_, free_list_latch_};
-  return DeletePgImp_(page_id);
+  return DeletePgLgc(page_id);
 }
 
-bool BufferPoolManagerInstance::DeletePgImp_(page_id_t page_id) {
-  if (!page_table_.count(page_id)) {
+bool BufferPoolManagerInstance::DeletePgLgc(page_id_t page_id) {
+  if (page_table_.count(page_id) != 0) {
     return true;
   }
   Page *page = pages_ + page_table_[page_id];
-  if (page->pin_count_) {
+  if (page->pin_count_ != 0) {
     return false;
   }
 
@@ -174,11 +174,11 @@ bool BufferPoolManagerInstance::DeletePgImp_(page_id_t page_id) {
 
 bool BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) {
   std::shared_lock lock_page{pageframe_table_latch_};
-  return UnpinPgImp_(page_id, is_dirty);
+  return UnpinPgLgc(page_id, is_dirty);
 }
 
-bool BufferPoolManagerInstance::UnpinPgImp_(page_id_t page_id, bool is_dirty) {
-  if (!page_table_.count(page_id)) {
+bool BufferPoolManagerInstance::UnpinPgLgc(page_id_t page_id, bool is_dirty) {
+  if (page_table_.count(page_id) == 0) {
     return false;
   }
 
@@ -205,7 +205,7 @@ void BufferPoolManagerInstance::ValidatePageId(const page_id_t page_id) const {
   assert(page_id % num_instances_ == instance_index_);  // allocated pages mod back to this BPI
 }
 
-bool BufferPoolManagerInstance::GetFreeFrame_(frame_id_t *frame_id) {
+bool BufferPoolManagerInstance::GetFreeFrameLgc(frame_id_t *frame_id) {
   if (!free_list_.empty()) {
     *frame_id = free_list_.front();
     free_list_.pop_front();

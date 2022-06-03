@@ -66,7 +66,9 @@ Page *ParallelBufferPoolManager::NewPgImp(page_id_t *page_id) {
     if (++next_instance_idx_ >= num_instances_) {
       next_instance_idx_ = 0;
     }
-    if (next_instance_idx_ == start_point) return nullptr;
+    if (next_instance_idx_ == start_point) {
+      return nullptr;
+    }
   }
   if (++next_instance_idx_ >= num_instances_) {
     next_instance_idx_ = 0;

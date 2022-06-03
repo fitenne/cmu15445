@@ -148,18 +148,18 @@ class BufferPoolManagerInstance : public BufferPoolManager {
   /** This latch protects shared data structures. We recommend updating this comment to describe what it protects. */
   std::mutex free_list_latch_;
   std::shared_mutex pageframe_table_latch_;
-  /** 
+  /**
    * Try free_list first, then replacer
    * @param[out] frame_id id of free frame
    * @return true if a free frame was found, false otherwise
    */
-  bool GetFreeFrame_(frame_id_t *frame_id);
-  
-  Page *FetchPgImp_(page_id_t page_id);
-  bool UnpinPgImp_(page_id_t page_id, bool is_dirty);
-  bool FlushPgImp_(page_id_t page_id);
-  Page *NewPgImp_(page_id_t *page_id);
-  bool DeletePgImp_(page_id_t page_id);
-  void FlushAllPgsImp_();
+  bool GetFreeFrameLgc(frame_id_t *frame_id);
+
+  Page *FetchPgLgc(page_id_t page_id);
+  bool UnpinPgLgc(page_id_t page_id, bool is_dirty);
+  bool FlushPgLgc(page_id_t page_id);
+  Page *NewPgLgc(page_id_t *page_id);
+  bool DeletePgLgc(page_id_t page_id);
+  void FlushAllPgsLgc();
 };
 }  // namespace bustub
