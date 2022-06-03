@@ -139,8 +139,6 @@ class BufferPoolManagerInstance : public BufferPoolManager {
   LogManager *log_manager_ __attribute__((__unused__));
   /** Page table for keeping track of buffer pool pages. */
   std::unordered_map<page_id_t, frame_id_t> page_table_;
-  /** Keep track of frame to page map */
-  std::unordered_map<frame_id_t, page_id_t> frame_table_;
   /** Replacer to find unpinned pages for replacement. */
   Replacer *replacer_;
   /** List of free pages. */
@@ -161,5 +159,6 @@ class BufferPoolManagerInstance : public BufferPoolManager {
   Page *NewPgLgc(page_id_t *page_id);
   bool DeletePgLgc(page_id_t page_id);
   void FlushAllPgsLgc();
+  bool InPool(page_id_t page_id);
 };
 }  // namespace bustub

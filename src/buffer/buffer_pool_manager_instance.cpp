@@ -54,7 +54,7 @@ bool BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) {
 }
 
 bool BufferPoolManagerInstance::FlushPgLgc(page_id_t page_id) {
-  if (page_id == INVALID_PAGE_ID || page_table_.count(page_id) == 0) {
+  if (page_id == INVALID_PAGE_ID || !InPool(page_id)) {
     return false;
   }
   Page *page = pages_ + page_table_[page_id];
@@ -99,7 +99,6 @@ Page *BufferPoolManagerInstance::NewPgLgc(page_id_t *page_id) {
   pages_[free_frame].is_dirty_ = false;
   pages_[free_frame].page_id_ = disk_page_id;
   page_table_[disk_page_id] = free_frame;
-  frame_table_[free_frame] = disk_page_id;
   replacer_->Pin(free_frame);
 
   *page_id = disk_page_id;
@@ -119,7 +118,7 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
 }
 
 Page *BufferPoolManagerInstance::FetchPgLgc(page_id_t page_id) {
-  if (page_table_.count(page_id) != 0) {
+  if (InPool(page_id)) {
     frame_id_t frame_id = page_table_[page_id];
     Page *page = pages_ + frame_id;
     page->pin_count_++;
@@ -139,7 +138,6 @@ Page *BufferPoolManagerInstance::FetchPgLgc(page_id_t page_id) {
   page->is_dirty_ = false;
   disk_manager_->ReadPage(page_id, page->data_);
   page_table_[page_id] = free_frame;
-  frame_table_[free_frame] = page_id;
 
   replacer_->Pin(free_frame);
   return page;
@@ -156,7 +154,7 @@ bool BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) {
 }
 
 bool BufferPoolManagerInstance::DeletePgLgc(page_id_t page_id) {
-  if (page_table_.count(page_id) == 0) {
+  if (!InPool(page_id)) {
     return true;
   }
   Page *page = pages_ + page_table_[page_id];
@@ -172,7 +170,6 @@ bool BufferPoolManagerInstance::DeletePgLgc(page_id_t page_id) {
   auto frame_id = page_table_[page_id];
   free_list_.emplace_back(frame_id);
   page_table_.erase(page_id);
-  frame_table_.erase(frame_id);
   new (page) Page();
   return true;
 }
@@ -183,7 +180,7 @@ bool BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) {
 }
 
 bool BufferPoolManagerInstance::UnpinPgLgc(page_id_t page_id, bool is_dirty) {
-  if (page_table_.count(page_id) == 0) {
+  if (!InPool(page_id)) {
     return false;
   }
 
@@ -224,10 +221,13 @@ bool BufferPoolManagerInstance::GetFreeFrameLgc(frame_id_t *frame_id) {
   Page *page = pages_ + *frame_id;
   if (page->is_dirty_) {
     disk_manager_->WritePage(page->page_id_, page->data_);
+    page->is_dirty_ = false;
   }
-  page_table_.erase(frame_table_[*frame_id]);
-  frame_table_.erase(*frame_id);
   return true;
+}
+
+bool BufferPoolManagerInstance::InPool(page_id_t page_id) {
+  return page_table_.count(page_id) != 0 && pages_[page_table_[page_id]].page_id_ == page_id;
 }
 
 }  // namespace bustub
