@@ -14,6 +14,7 @@
 
 #include <list>
 #include <mutex>  // NOLINT
+#include <shared_mutex>
 #include <unordered_map>
 
 #include "buffer/buffer_pool_manager.h"
@@ -138,11 +139,27 @@ class BufferPoolManagerInstance : public BufferPoolManager {
   LogManager *log_manager_ __attribute__((__unused__));
   /** Page table for keeping track of buffer pool pages. */
   std::unordered_map<page_id_t, frame_id_t> page_table_;
+  /** Keep track of frame to page map */
+  std::unordered_map<frame_id_t, page_id_t> frame_table_;
   /** Replacer to find unpinned pages for replacement. */
   Replacer *replacer_;
   /** List of free pages. */
   std::list<frame_id_t> free_list_;
   /** This latch protects shared data structures. We recommend updating this comment to describe what it protects. */
-  std::mutex latch_;
+  std::mutex free_list_latch_;
+  std::shared_mutex pageframe_table_latch_;
+  /** 
+   * Try free_list first, then replacer
+   * @param[out] frame_id id of free frame
+   * @return true if a free frame was found, false otherwise
+   */
+  bool GetFreeFrame_(frame_id_t *frame_id);
+  
+  Page *FetchPgImp_(page_id_t page_id);
+  bool UnpinPgImp_(page_id_t page_id, bool is_dirty);
+  bool FlushPgImp_(page_id_t page_id);
+  Page *NewPgImp_(page_id_t *page_id);
+  bool DeletePgImp_(page_id_t page_id);
+  void FlushAllPgsImp_();
 };
 }  // namespace bustub
