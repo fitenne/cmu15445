@@ -57,7 +57,9 @@ bool BufferPoolManagerInstance::FlushPgLgc(page_id_t page_id) {
   if (page_id == INVALID_PAGE_ID || page_table_.count(page_id) == 0) {
     return false;
   }
-  disk_manager_->WritePage(page_id, pages_[page_table_[page_id]].data_);
+  Page *page = pages_ + page_table_[page_id];
+  disk_manager_->WritePage(page_id, page->data_);
+  page->is_dirty_ = false;
   return true;
 }
 
@@ -68,9 +70,10 @@ void BufferPoolManagerInstance::FlushAllPgsImp() {
 }
 
 void BufferPoolManagerInstance::FlushAllPgsLgc() {
-  for (auto &[_, frame_id] : page_table_) {
-    Page *page = pages_ + frame_id;
+  for (auto it : page_table_) {
+    Page *page = pages_ + it.second;
     disk_manager_->WritePage(page->page_id_, page->data_);
+    page->is_dirty_ = false;
   }
 }
 
@@ -93,10 +96,11 @@ Page *BufferPoolManagerInstance::NewPgLgc(page_id_t *page_id) {
   auto disk_page_id = AllocatePage();
   pages_[free_frame].ResetMemory();
   pages_[free_frame].pin_count_ = 1;
-  pages_[free_frame].is_dirty_ = true;
+  pages_[free_frame].is_dirty_ = false;
   pages_[free_frame].page_id_ = disk_page_id;
   page_table_[disk_page_id] = free_frame;
   frame_table_[free_frame] = disk_page_id;
+  replacer_->Pin(free_frame);
 
   *page_id = disk_page_id;
   return pages_ + free_frame;
@@ -152,7 +156,7 @@ bool BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) {
 }
 
 bool BufferPoolManagerInstance::DeletePgLgc(page_id_t page_id) {
-  if (page_table_.count(page_id) != 0) {
+  if (page_table_.count(page_id) == 0) {
     return true;
   }
   Page *page = pages_ + page_table_[page_id];
@@ -163,6 +167,7 @@ bool BufferPoolManagerInstance::DeletePgLgc(page_id_t page_id) {
   if (page->is_dirty_) {
     disk_manager_->WritePage(page_id, page->data_);
   }
+  DeallocatePage(page_id);
 
   auto frame_id = page_table_[page_id];
   free_list_.emplace_back(frame_id);
@@ -173,7 +178,7 @@ bool BufferPoolManagerInstance::DeletePgLgc(page_id_t page_id) {
 }
 
 bool BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) {
-  std::shared_lock lock_page{pageframe_table_latch_};
+  std::lock_guard lock_page{pageframe_table_latch_};
   return UnpinPgLgc(page_id, is_dirty);
 }
 
@@ -188,9 +193,10 @@ bool BufferPoolManagerInstance::UnpinPgLgc(page_id_t page_id, bool is_dirty) {
     return false;
   }
 
-  --page->pin_count_;
-  page->is_dirty_ = is_dirty;
-  replacer_->Unpin(frame_id);
+  page->is_dirty_ |= is_dirty;
+  if (--page->pin_count_ == 0) {
+    replacer_->Unpin(frame_id);
+  }
   return true;
 }
 
