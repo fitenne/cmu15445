@@ -13,6 +13,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <vector>
 #include "buffer/buffer_pool_manager.h"
 #include "buffer/buffer_pool_manager_instance.h"
