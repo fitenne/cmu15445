@@ -11,17 +11,39 @@
 //===----------------------------------------------------------------------===//
 #include <memory>
 
+#include "catalog/catalog.h"
+#include "common/exception.h"
 #include "execution/executors/update_executor.h"
 
 namespace bustub {
 
 UpdateExecutor::UpdateExecutor(ExecutorContext *exec_ctx, const UpdatePlanNode *plan,
                                std::unique_ptr<AbstractExecutor> &&child_executor)
-    : AbstractExecutor(exec_ctx) {}
+    : AbstractExecutor(exec_ctx),
+      plan_(plan),
+      table_info_(exec_ctx->GetCatalog()->GetTable(plan->TableOid())),
+      child_executor_(std::move(child_executor)) {}
 
-void UpdateExecutor::Init() {}
+void UpdateExecutor::Init() { child_executor_->Init(); }
 
-bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) { return false; }
+bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
+  Tuple cur_tuple{};
+  RID cur_rid{};
+
+  auto txn = exec_ctx_->GetTransaction();
+  while (child_executor_->Next(&cur_tuple, &cur_rid)) {
+    auto updated_tuple = GenerateUpdatedTuple(cur_tuple);
+    if (table_info_->table_->UpdateTuple(updated_tuple, cur_rid, txn)) {
+      for (auto index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
+        index_info->index_->DeleteEntry(cur_tuple, cur_rid, txn);
+        index_info->index_->InsertEntry(updated_tuple, cur_rid, txn);
+      }
+    } else {
+      throw Exception("failed to update a tuple");
+    }
+  }
+  return false;
+}
 
 Tuple UpdateExecutor::GenerateUpdatedTuple(const Tuple &src_tuple) {
   const auto &update_attrs = plan_->GetUpdateAttr();

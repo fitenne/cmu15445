@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <utility>
 
@@ -59,6 +60,10 @@ class InsertExecutor : public AbstractExecutor {
  private:
   /** The insert plan node to be executed*/
   const InsertPlanNode *plan_;
+
+  TableInfo *table_info_{};
+
+  std::unique_ptr<AbstractExecutor> child_executor_;
 };
 
 }  // namespace bustub
