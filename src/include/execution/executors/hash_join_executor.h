@@ -13,7 +13,10 @@
 #pragma once
 
 #include <memory>
+#include <optional>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
@@ -54,6 +57,16 @@ class HashJoinExecutor : public AbstractExecutor {
  private:
   /** The NestedLoopJoin plan node to be executed. */
   const HashJoinPlanNode *plan_;
+
+  std::unique_ptr<AbstractExecutor> left_child_{};
+  std::unique_ptr<AbstractExecutor> right_child_{};
+
+  std::unordered_map<HashJoinKey, std::vector<Tuple>> ht_;
+
+  std::optional<Tuple> cur_left_tuple_{};
+  std::optional<std::vector<Tuple>::iterator> cur_right_tuple_iter_{};
+
+  HashJoinKey GetLeftKey(const Tuple &tuple) const;
 };
 
 }  // namespace bustub

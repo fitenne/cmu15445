@@ -11,16 +11,70 @@
 //===----------------------------------------------------------------------===//
 
 #include "execution/executors/nested_loop_join_executor.h"
+#include <vector>
+#include "catalog/schema.h"
+#include "common/logger.h"
 
 namespace bustub {
 
 NestedLoopJoinExecutor::NestedLoopJoinExecutor(ExecutorContext *exec_ctx, const NestedLoopJoinPlanNode *plan,
                                                std::unique_ptr<AbstractExecutor> &&left_executor,
                                                std::unique_ptr<AbstractExecutor> &&right_executor)
-    : AbstractExecutor(exec_ctx) {}
+    : AbstractExecutor(exec_ctx),
+      plan_(plan),
+      left_executor_(std::move(left_executor)),
+      right_executor_(std::move(right_executor)) {
+  left_schema_ = left_executor_->GetOutputSchema();
+  right_schema_ = right_executor_->GetOutputSchema();
+}
 
-void NestedLoopJoinExecutor::Init() {}
+void NestedLoopJoinExecutor::Init() {
+  left_executor_->Init();
+  right_executor_->Init();
+  Tuple tuple;
+  RID rid;
+  if (left_executor_->Next(&tuple, &rid)) {
+    cur_left_tuple_ = tuple;
+  }
+}
 
-bool NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) { return false; }
+bool NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) {
+  Tuple cur_tuple;
+  RID cur_rid;
+
+  while (true) {
+    if (!cur_left_tuple_.has_value()) {
+      // no more tuple
+      break;
+    }
+
+    while (right_executor_->Next(&cur_tuple, &cur_rid)) {
+      auto pred = plan_->Predicate()->EvaluateJoin(&cur_left_tuple_.value(), left_schema_, &cur_tuple, right_schema_);
+      if (pred.GetAs<bool>()) {
+        std::vector<Value> values;
+        uint32_t left_col_cnt = left_schema_->GetColumnCount();
+        uint32_t right_col_cnt = right_schema_->GetColumnCount();
+        for (size_t i = 0; i < left_col_cnt; ++i) {
+          values.emplace_back(cur_left_tuple_.value().GetValue(left_schema_, i));
+        }
+        for (size_t i = 0; i < right_col_cnt; ++i) {
+          values.emplace_back(cur_left_tuple_.value().GetValue(right_schema_, i));
+        }
+        *tuple = Tuple(values, plan_->OutputSchema());
+        *rid = RID();  // always invalid rid?
+        return true;
+      }
+    }
+
+    // next left tuple
+    if (left_executor_->Next(&cur_tuple, &cur_rid)) {
+      cur_left_tuple_ = cur_tuple;
+    } else {
+      cur_left_tuple_.reset();
+    }
+    right_executor_->Init();
+  }
+  return false;
+}
 
 }  // namespace bustub
