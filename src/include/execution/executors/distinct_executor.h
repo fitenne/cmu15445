@@ -13,6 +13,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_set>
 #include <utility>
 
 #include "execution/executors/abstract_executor.h"
@@ -53,5 +54,9 @@ class DistinctExecutor : public AbstractExecutor {
   const DistinctPlanNode *plan_;
   /** The child executor from which tuples are obtained */
   std::unique_ptr<AbstractExecutor> child_executor_;
+
+  using distinct_hash_t = std::unordered_set<DistinctHashTupleWarpper>;
+  distinct_hash_t ht_{};
+  distinct_hash_t::iterator iter_{};
 };
 }  // namespace bustub

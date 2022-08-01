@@ -110,6 +110,26 @@ TEST_F(ExecutorTest, SimpleSeqScanTest) {
   }
 }
 
+// SELECT col_c FROM test_7;
+TEST_F(ExecutorTest, SeqScanTest) {
+  // Construct query plan
+  TableInfo *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_7");
+  const Schema &schema = table_info->schema_;
+  auto *col_c = MakeColumnValueExpression(schema, 0, "colC");
+  auto *out_schema = MakeOutputSchema({{"colC", col_c}});
+  SeqScanPlanNode plan{out_schema, nullptr, table_info->oid_};
+
+  // Execute
+  std::vector<Tuple> result_set{};
+  GetExecutionEngine()->Execute(&plan, &result_set, GetTxn(), GetExecutorContext());
+
+  // Verify
+  ASSERT_EQ(result_set.size(), 100);
+  for (int32_t i = 0; i < 100; ++i) {
+    ASSERT_TRUE(result_set[i].GetValue(out_schema, out_schema->GetColIdx("colC")).GetAs<int32_t>() == i % 10);
+  }
+}
+
 // INSERT INTO empty_table2 VALUES (100, 10), (101, 11), (102, 12)
 TEST_F(ExecutorTest, SimpleRawInsertTest) {
   // Create Values to insert
@@ -591,7 +611,7 @@ TEST_F(ExecutorTest, DISABLED_SimpleGroupByAggregation) {
 }
 
 // SELECT colA, colB FROM test_3 LIMIT 10
-TEST_F(ExecutorTest, DISABLED_SimpleLimitTest) {
+TEST_F(ExecutorTest, SimpleLimitTest) {
   auto *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_3");
   auto &schema = table_info->schema_;
 
@@ -619,7 +639,7 @@ TEST_F(ExecutorTest, DISABLED_SimpleLimitTest) {
 }
 
 // SELECT DISTINCT colC FROM test_7
-TEST_F(ExecutorTest, DISABLED_SimpleDistinctTest) {
+TEST_F(ExecutorTest, SimpleDistinctTest) {
   auto *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_7");
   auto &schema = table_info->schema_;
 
