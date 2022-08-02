@@ -18,10 +18,33 @@
 #include <utility>
 #include <vector>
 
+#include "common/util/hash_util.h"
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/hash_join_plan.h"
 #include "storage/table/tuple.h"
+
+namespace bustub {
+
+struct HashJoinKey {
+  Value key_{};
+
+  explicit HashJoinKey(const Value &key) : key_(key) {}
+  explicit HashJoinKey(const Value &&key) : key_(key) {}
+
+  bool operator==(const HashJoinKey &rhs) const { return key_.CompareEquals(rhs.key_) == CmpBool::CmpTrue; }
+};
+
+}  // namespace bustub
+
+namespace std {
+
+template <>
+struct hash<bustub::HashJoinKey> {
+  size_t operator()(const bustub::HashJoinKey &key) const { return bustub::HashUtil::HashValue(&key.key_); }
+};
+
+}  // namespace std
 
 namespace bustub {
 

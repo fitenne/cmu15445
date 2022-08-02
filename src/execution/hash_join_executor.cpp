@@ -34,7 +34,7 @@ void HashJoinExecutor::Init() {
   RID rid{};
   while (right_child_->Next(&tuple, &rid)) {
     Value value = plan_->RightJoinKeyExpression()->Evaluate(&tuple, right_child_->GetOutputSchema());
-    ht_[HashJoinKey(std::move(value))].emplace_back(tuple);
+    ht_[HashJoinKey(value)].emplace_back(tuple);
   }
 
   if (left_child_->Next(&tuple, &rid)) {
@@ -91,6 +91,6 @@ bool HashJoinExecutor::Next(Tuple *tuple, RID *rid) {
 
 HashJoinKey HashJoinExecutor::GetLeftKey(const Tuple &tuple) const {
   return HashJoinKey(plan_->LeftJoinKeyExpression()->Evaluate(&tuple, plan_->GetLeftPlan()->OutputSchema()));
-};
+}
 
 }  // namespace bustub

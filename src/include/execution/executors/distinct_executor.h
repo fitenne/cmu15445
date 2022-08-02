@@ -15,12 +15,46 @@
 #include <memory>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
+#include "common/util/hash_util.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/distinct_plan.h"
 
 namespace bustub {
+struct DistinctHashTupleWarpper {
+  std::vector<Value> tuple_{};
 
+  bool operator==(const DistinctHashTupleWarpper &rhs) const {
+    if (tuple_.size() != rhs.tuple_.size()) {
+      return false;
+    }
+    for (size_t i = 0; i < tuple_.size(); ++i) {
+      if (tuple_[i].CompareEquals(rhs.tuple_[i]) != CmpBool::CmpTrue) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+}  // namespace bustub
+
+namespace std {
+
+template <>
+struct hash<bustub::DistinctHashTupleWarpper> {
+  std::size_t operator()(const bustub::DistinctHashTupleWarpper &tuple_warpper) const {
+    size_t curr_hash = 0;
+    for (const auto &v : tuple_warpper.tuple_) {
+      curr_hash = bustub::HashUtil::CombineHashes(curr_hash, bustub::HashUtil::HashValue(&v));
+    }
+    return curr_hash;
+  }
+};
+
+}  // namespace std
+
+namespace bustub {
 /**
  * DistinctExecutor removes duplicate rows from child ouput.
  */
