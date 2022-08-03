@@ -28,13 +28,15 @@ HashJoinExecutor::HashJoinExecutor(ExecutorContext *exec_ctx, const HashJoinPlan
 
 void HashJoinExecutor::Init() {
   left_child_->Init();
-  right_child_->Init();
 
   Tuple tuple{};
   RID rid{};
-  while (right_child_->Next(&tuple, &rid)) {
-    Value value = plan_->RightJoinKeyExpression()->Evaluate(&tuple, right_child_->GetOutputSchema());
-    ht_[HashJoinKey(value)].emplace_back(tuple);
+  if (ht_.empty()) {
+    right_child_->Init();
+    while (right_child_->Next(&tuple, &rid)) {
+      Value value = plan_->RightJoinKeyExpression()->Evaluate(&tuple, right_child_->GetOutputSchema());
+      ht_[HashJoinKey(value)].emplace_back(tuple);
+    }
   }
 
   if (left_child_->Next(&tuple, &rid)) {
@@ -60,13 +62,11 @@ bool HashJoinExecutor::Next(Tuple *tuple, RID *rid) {
       Tuple right_tuple = *cur_right_tuple_iter_.value()++;
 
       std::vector<Value> values;
-      uint32_t left_col_cnt = plan_->GetLeftPlan()->OutputSchema()->GetColumnCount();
-      uint32_t right_col_cnt = plan_->GetRightPlan()->OutputSchema()->GetColumnCount();
-      for (size_t i = 0; i < left_col_cnt; ++i) {
-        values.emplace_back(cur_left_tuple_->GetValue(plan_->GetLeftPlan()->OutputSchema(), i));
+      for (const auto &col : plan_->GetLeftPlan()->OutputSchema()->GetColumns()) {
+        values.emplace_back(col.GetExpr()->Evaluate(&cur_left_tuple_.value(), left_child_->GetOutputSchema()));
       }
-      for (size_t i = 0; i < right_col_cnt; ++i) {
-        values.emplace_back(right_tuple.GetValue(plan_->GetRightPlan()->OutputSchema(), i));
+      for (const auto &col : plan_->GetRightPlan()->OutputSchema()->GetColumns()) {
+        values.emplace_back(col.GetExpr()->Evaluate(&right_tuple, right_child_->GetOutputSchema()));
       }
 
       *tuple = Tuple(values, plan_->OutputSchema());

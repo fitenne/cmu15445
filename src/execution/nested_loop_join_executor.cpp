@@ -31,10 +31,16 @@ NestedLoopJoinExecutor::NestedLoopJoinExecutor(ExecutorContext *exec_ctx, const 
 void NestedLoopJoinExecutor::Init() {
   left_executor_->Init();
   right_executor_->Init();
+  uint32_t left_col_cnt = left_schema_->GetColumnCount();
+  cur_left_tuple_values_.reserve(left_col_cnt);
   Tuple tuple;
   RID rid;
   if (left_executor_->Next(&tuple, &rid)) {
     cur_left_tuple_ = tuple;
+    cur_left_tuple_values_.clear();
+    for (size_t i = 0; i < left_col_cnt; ++i) {
+      cur_left_tuple_values_.emplace_back(cur_left_tuple_.value().GetValue(left_schema_, i));
+    }
   }
 }
 
@@ -51,12 +57,9 @@ bool NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) {
     while (right_executor_->Next(&cur_tuple, &cur_rid)) {
       auto pred = plan_->Predicate()->EvaluateJoin(&cur_left_tuple_.value(), left_schema_, &cur_tuple, right_schema_);
       if (pred.GetAs<bool>()) {
-        std::vector<Value> values;
-        uint32_t left_col_cnt = left_schema_->GetColumnCount();
+        std::vector<Value> values(cur_left_tuple_values_);
         uint32_t right_col_cnt = right_schema_->GetColumnCount();
-        for (size_t i = 0; i < left_col_cnt; ++i) {
-          values.emplace_back(cur_left_tuple_.value().GetValue(left_schema_, i));
-        }
+        values.reserve(values.size() + right_col_cnt);
         for (size_t i = 0; i < right_col_cnt; ++i) {
           values.emplace_back(cur_left_tuple_.value().GetValue(right_schema_, i));
         }
@@ -69,6 +72,11 @@ bool NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) {
     // next left tuple
     if (left_executor_->Next(&cur_tuple, &cur_rid)) {
       cur_left_tuple_ = cur_tuple;
+      cur_left_tuple_values_.clear();
+      uint32_t left_col_cnt = left_schema_->GetColumnCount();
+      for (size_t i = 0; i < left_col_cnt; ++i) {
+        cur_left_tuple_values_.emplace_back(cur_left_tuple_.value().GetValue(left_schema_, i));
+      }
     } else {
       cur_left_tuple_.reset();
     }

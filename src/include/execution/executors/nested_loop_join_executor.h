@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
@@ -64,6 +65,7 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
   const Schema *right_schema_{};
 
   std::optional<Tuple> cur_left_tuple_{};
+  std::vector<Value> cur_left_tuple_values_{};
 };
 
 }  // namespace bustub

@@ -57,7 +57,5 @@ class SeqScanExecutor : public AbstractExecutor {
 
   TableIterator iterator_;
   TableIterator end_;
-
-  std::vector<size_t> output_col_idx_{};
 };
 }  // namespace bustub

@@ -23,13 +23,7 @@ SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNod
       plan_(plan),
       table_info_(exec_ctx->GetCatalog()->GetTable(plan->GetTableOid())),
       iterator_(nullptr, RID(), nullptr),
-      end_(nullptr, RID(), nullptr) {
-  // remember that the Init() may be called multiple times
-  const Schema *output_schema = plan_->OutputSchema();
-  for (size_t i = 0; i < output_schema->GetColumnCount(); ++i) {
-    output_col_idx_.emplace_back(table_info_->schema_.GetColIdx(output_schema->GetColumn(i).GetName()));
-  }
-}
+      end_(nullptr, RID(), nullptr) {}
 
 void SeqScanExecutor::Init() {
   iterator_ = table_info_->table_->Begin(exec_ctx_->GetTransaction());
@@ -46,11 +40,8 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
       continue;
     }
     std::vector<Value> res;
-    for (auto idx : output_col_idx_) {
-      res.emplace_back(cur_tuple.GetValue(&table_info_->schema_, idx));
-    }
-    if (res.size() != plan_->OutputSchema()->GetColumnCount()) {
-      LOG_DEBUG("wtf");
+    for (const auto &col : plan_->OutputSchema()->GetColumns()) {
+      res.emplace_back(col.GetExpr()->Evaluate(&cur_tuple, &table_info_->schema_));
     }
     *tuple = Tuple(res, plan_->OutputSchema());
     *rid = cur_tuple.GetRid();
