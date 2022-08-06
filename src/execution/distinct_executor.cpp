@@ -29,11 +29,11 @@ bool DistinctExecutor::Next(Tuple *tuple, RID *rid) {
   RID cur_rid{};
   while (child_executor_->Next(&cur_tuple, &cur_rid)) {
     DistinctHashTupleWarpper tuple_warpper;
-    tuple_warpper.tuple_.reserve(plan_->OutputSchema()->GetColumnCount());
+    tuple_warpper.values_.reserve(plan_->OutputSchema()->GetColumnCount());
     const Schema *child_schema = child_executor_->GetOutputSchema();
     for (const auto &col : plan_->OutputSchema()->GetColumns()) {
       uint32_t idx = child_schema->GetColIdx(col.GetName());
-      tuple_warpper.tuple_.emplace_back(cur_tuple.GetValue(child_schema, idx));
+      tuple_warpper.values_.emplace_back(cur_tuple.GetValue(child_schema, idx));
     }
     if (ht_.insert(std::move(tuple_warpper)).second) {
       *tuple = cur_tuple;

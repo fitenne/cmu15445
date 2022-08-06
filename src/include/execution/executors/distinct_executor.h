@@ -23,14 +23,14 @@
 
 namespace bustub {
 struct DistinctHashTupleWarpper {
-  std::vector<Value> tuple_{};
+  std::vector<Value> values_{};
 
   bool operator==(const DistinctHashTupleWarpper &rhs) const {
-    if (tuple_.size() != rhs.tuple_.size()) {
+    if (values_.size() != rhs.values_.size()) {
       return false;
     }
-    for (size_t i = 0; i < tuple_.size(); ++i) {
-      if (tuple_[i].CompareEquals(rhs.tuple_[i]) != CmpBool::CmpTrue) {
+    for (size_t i = 0; i < values_.size(); ++i) {
+      if (values_[i].CompareEquals(rhs.values_[i]) != CmpBool::CmpTrue) {
         return false;
       }
     }
@@ -45,7 +45,7 @@ template <>
 struct hash<bustub::DistinctHashTupleWarpper> {
   std::size_t operator()(const bustub::DistinctHashTupleWarpper &tuple_warpper) const {
     size_t curr_hash = 0;
-    for (const auto &v : tuple_warpper.tuple_) {
+    for (const auto &v : tuple_warpper.values_) {
       curr_hash = bustub::HashUtil::CombineHashes(curr_hash, bustub::HashUtil::HashValue(&v));
     }
     return curr_hash;

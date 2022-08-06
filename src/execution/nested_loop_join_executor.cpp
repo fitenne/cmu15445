@@ -24,10 +24,7 @@ NestedLoopJoinExecutor::NestedLoopJoinExecutor(ExecutorContext *exec_ctx, const 
     : AbstractExecutor(exec_ctx),
       plan_(plan),
       left_executor_(std::move(left_executor)),
-      right_executor_(std::move(right_executor)) {
-  left_schema_ = left_executor_->GetOutputSchema();
-  right_schema_ = right_executor_->GetOutputSchema();
-}
+      right_executor_(std::move(right_executor)) {}
 
 void NestedLoopJoinExecutor::Init() {
   left_executor_->Init();
@@ -50,30 +47,31 @@ bool NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) {
     }
 
     while (right_executor_->Next(&cur_tuple, &cur_rid)) {
-      auto pred = plan_->Predicate()->EvaluateJoin(&cur_left_tuple_.value(), left_schema_, &cur_tuple, right_schema_);
+      auto pred = plan_->Predicate()->EvaluateJoin(&cur_left_tuple_.value(), plan_->GetLeftPlan()->OutputSchema(),
+                                                   &cur_tuple, plan_->GetRightPlan()->OutputSchema());
       if (pred.GetAs<bool>()) {
         std::vector<Value> values;
         values.reserve(plan_->OutputSchema()->GetColumnCount());
         for (const auto &col : plan_->OutputSchema()->GetColumns()) {
           auto col_expr = dynamic_cast<const ColumnValueExpression *>(col.GetExpr());
           if (col_expr->GetTupleIdx() == 0) {
-            values.emplace_back(col_expr->Evaluate(&cur_left_tuple_.value(), left_schema_));
+            values.emplace_back(col_expr->Evaluate(&cur_left_tuple_.value(), plan_->GetLeftPlan()->OutputSchema()));
           } else {
-            values.emplace_back(col_expr->Evaluate(&cur_tuple, right_schema_));
+            values.emplace_back(col_expr->Evaluate(&cur_tuple, plan_->GetRightPlan()->OutputSchema()));
           }
         }
         *tuple = Tuple(values, plan_->OutputSchema());
-        *rid = RID();  // always invalid rid?
+        *rid = RID();  // always invalid rid
         return true;
       }
     }
 
     if (left_executor_->Next(&cur_tuple, &cur_rid)) {
       cur_left_tuple_ = cur_tuple;
+      right_executor_->Init();
     } else {
       cur_left_tuple_.reset();
     }
-    right_executor_->Init();
   }
   return false;
 }

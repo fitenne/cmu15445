@@ -61,9 +61,6 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
   std::unique_ptr<AbstractExecutor> left_executor_{};
   std::unique_ptr<AbstractExecutor> right_executor_{};
 
-  const Schema *left_schema_{};
-  const Schema *right_schema_{};
-
   std::optional<Tuple> cur_left_tuple_{};
 };
 

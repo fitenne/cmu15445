@@ -35,30 +35,26 @@ bool InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
   Tuple cur_tuple{};
   RID cur_rid{};
 
-  try {
-    auto txn = exec_ctx_->GetTransaction();
-    if (plan_->IsRawInsert()) {
-      for (auto &t : plan_->RawValues()) {
-        cur_tuple = Tuple(t, &table_info_->schema_);
-        table_info_->table_->InsertTuple(cur_tuple, &cur_rid, txn);
-        for (IndexInfo *index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
-          auto key = cur_tuple.KeyFromTuple(table_info_->schema_, *index_info->index_->GetKeySchema(),
-                                            index_info->index_->GetKeyAttrs());
-          index_info->index_->InsertEntry(key, cur_rid, txn);
-        }
-      }
-    } else {
-      while (child_executor_->Next(&cur_tuple, &cur_rid)) {
-        table_info_->table_->InsertTuple(cur_tuple, &cur_rid, txn);
-        for (IndexInfo *index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
-          auto key = cur_tuple.KeyFromTuple(table_info_->schema_, *index_info->index_->GetKeySchema(),
-                                            index_info->index_->GetKeyAttrs());
-          index_info->index_->InsertEntry(key, cur_rid, txn);
-        }
+  auto txn = exec_ctx_->GetTransaction();
+  if (plan_->IsRawInsert()) {
+    for (auto &t : plan_->RawValues()) {
+      cur_tuple = Tuple(t, &table_info_->schema_);
+      table_info_->table_->InsertTuple(cur_tuple, &cur_rid, txn);
+      for (IndexInfo *index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
+        auto key = cur_tuple.KeyFromTuple(table_info_->schema_, *index_info->index_->GetKeySchema(),
+                                          index_info->index_->GetKeyAttrs());
+        index_info->index_->InsertEntry(key, cur_rid, txn);
       }
     }
-  } catch (Exception &e) {
-    LOG_ERROR("%s", e.what());
+  } else {
+    while (child_executor_->Next(&cur_tuple, &cur_rid)) {
+      table_info_->table_->InsertTuple(cur_tuple, &cur_rid, txn);
+      for (IndexInfo *index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
+        auto key = cur_tuple.KeyFromTuple(table_info_->schema_, *index_info->index_->GetKeySchema(),
+                                          index_info->index_->GetKeyAttrs());
+        index_info->index_->InsertEntry(key, cur_rid, txn);
+      }
+    }
   }
 
   return false;

@@ -45,9 +45,6 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
     }
     *tuple = Tuple(res, plan_->OutputSchema());
     *rid = cur_tuple.GetRid();
-    // LOG_DEBUG("table: %s, schema: %s, tuple: %s",
-    //           exec_ctx_->GetCatalog()->GetTable(plan_->GetTableOid())->name_.c_str(),
-    //           plan_->OutputSchema()->ToString().c_str(), tuple->ToString(plan_->OutputSchema()).c_str());
     return true;
   }
   return false;
