@@ -89,8 +89,6 @@ class DistinctExecutor : public AbstractExecutor {
   /** The child executor from which tuples are obtained */
   std::unique_ptr<AbstractExecutor> child_executor_;
 
-  using distinct_hash_t = std::unordered_set<DistinctHashTupleWarpper>;
-  distinct_hash_t ht_{};
-  distinct_hash_t::iterator iter_{};
+  std::unordered_set<DistinctHashTupleWarpper> ht_{};
 };
 }  // namespace bustub

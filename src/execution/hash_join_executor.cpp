@@ -14,6 +14,7 @@
 #include <vector>
 #include "common/logger.h"
 #include "execution/expressions/abstract_expression.h"
+#include "execution/expressions/column_value_expression.h"
 #include "execution/plans/hash_join_plan.h"
 
 namespace bustub {
@@ -27,46 +28,49 @@ HashJoinExecutor::HashJoinExecutor(ExecutorContext *exec_ctx, const HashJoinPlan
       right_child_(std::move(right_child)) {}
 
 void HashJoinExecutor::Init() {
-  left_child_->Init();
+  right_child_->Init();
 
   Tuple tuple{};
   RID rid{};
   if (ht_.empty()) {
-    right_child_->Init();
-    while (right_child_->Next(&tuple, &rid)) {
-      Value value = plan_->RightJoinKeyExpression()->Evaluate(&tuple, right_child_->GetOutputSchema());
+    left_child_->Init();
+    while (left_child_->Next(&tuple, &rid)) {
+      Value value = plan_->LeftJoinKeyExpression()->Evaluate(&tuple, plan_->GetLeftPlan()->OutputSchema());
       ht_[HashJoinKey(value)].emplace_back(tuple);
     }
   }
 
-  if (left_child_->Next(&tuple, &rid)) {
-    cur_left_tuple_ = tuple;
-    HashJoinKey key = GetLeftKey(tuple);
+  cur_right_tuple_.reset();
+  while (right_child_->Next(&tuple, &rid)) {
+    HashJoinKey key(plan_->RightJoinKeyExpression()->Evaluate(&tuple, plan_->GetRightPlan()->OutputSchema()));
     if (ht_.count(key) != 0) {
-      cur_right_tuple_iter_ = ht_[key].begin();
+      cur_right_tuple_ = tuple;
+      cur_left_tuple_iter_ = ht_[key].begin();
+      break;
     }
   }
 }
 
 bool HashJoinExecutor::Next(Tuple *tuple, RID *rid) {
-  Tuple cur_tuple{};
-  RID cur_rid{};
-
   while (true) {
-    if (!cur_left_tuple_.has_value()) {
+    if (!cur_right_tuple_.has_value()) {
       break;
     }
 
-    while (cur_right_tuple_iter_.has_value() &&
-           cur_right_tuple_iter_ != ht_[GetLeftKey(cur_left_tuple_.value())].end()) {
-      Tuple right_tuple = *cur_right_tuple_iter_.value()++;
+    HashJoinKey right_key(
+        plan_->RightJoinKeyExpression()->Evaluate(&cur_right_tuple_.value(), plan_->GetRightPlan()->OutputSchema()));
+    while (cur_left_tuple_iter_ != ht_[right_key].end()) {
+      Tuple left_tuple = *cur_left_tuple_iter_++;
 
       std::vector<Value> values;
-      for (const auto &col : plan_->GetLeftPlan()->OutputSchema()->GetColumns()) {
-        values.emplace_back(col.GetExpr()->Evaluate(&cur_left_tuple_.value(), left_child_->GetOutputSchema()));
-      }
-      for (const auto &col : plan_->GetRightPlan()->OutputSchema()->GetColumns()) {
-        values.emplace_back(col.GetExpr()->Evaluate(&right_tuple, right_child_->GetOutputSchema()));
+      values.reserve(plan_->OutputSchema()->GetColumnCount());
+      for (const auto &col : plan_->OutputSchema()->GetColumns()) {
+        const auto col_expr = dynamic_cast<const ColumnValueExpression *>(col.GetExpr());
+        if (col_expr->GetTupleIdx() == 0) {
+          values.emplace_back(left_tuple.GetValue(plan_->GetLeftPlan()->OutputSchema(), col_expr->GetColIdx()));
+        } else {
+          values.emplace_back(cur_right_tuple_->GetValue(plan_->GetRightPlan()->OutputSchema(), col_expr->GetColIdx()));
+        }
       }
 
       *tuple = Tuple(values, plan_->OutputSchema());
@@ -74,23 +78,23 @@ bool HashJoinExecutor::Next(Tuple *tuple, RID *rid) {
       return true;
     }
 
-    if (left_child_->Next(&cur_tuple, &cur_rid)) {
-      cur_left_tuple_ = cur_tuple;
-      HashJoinKey key = GetLeftKey(cur_tuple);
+    Tuple cur_tuple{};
+    RID cur_rid{};
+    cur_right_tuple_.reset();
+    while (right_child_->Next(&cur_tuple, &cur_rid)) {
+      HashJoinKey key(plan_->RightJoinKeyExpression()->Evaluate(&cur_tuple, plan_->GetRightPlan()->OutputSchema()));
       if (ht_.count(key) != 0) {
-        cur_right_tuple_iter_ = ht_[key].begin();
-      } else {
-        cur_right_tuple_iter_.reset();
+        cur_right_tuple_ = cur_tuple;
+        cur_left_tuple_iter_ = ht_[key].begin();
+        break;
       }
-    } else {
-      cur_left_tuple_.reset();
     }
   }
   return false;
 }
 
-HashJoinKey HashJoinExecutor::GetLeftKey(const Tuple &tuple) const {
-  return HashJoinKey(plan_->LeftJoinKeyExpression()->Evaluate(&tuple, plan_->GetLeftPlan()->OutputSchema()));
-}
+// HashJoinKey HashJoinExecutor::GetLeftKey(const Tuple &tuple) const {
+//   return HashJoinKey(plan_->LeftJoinKeyExpression()->Evaluate(&tuple, plan_->GetLeftPlan()->OutputSchema()));
+// }
 
 }  // namespace bustub

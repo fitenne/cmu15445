@@ -86,10 +86,10 @@ class HashJoinExecutor : public AbstractExecutor {
 
   std::unordered_map<HashJoinKey, std::vector<Tuple>> ht_;
 
-  std::optional<Tuple> cur_left_tuple_{};
-  std::optional<std::vector<Tuple>::iterator> cur_right_tuple_iter_{};
+  std::optional<Tuple> cur_right_tuple_{};
+  std::vector<Tuple>::iterator cur_left_tuple_iter_{};
 
-  HashJoinKey GetLeftKey(const Tuple &tuple) const;
+  // HashJoinKey GetLeftKey(const Tuple &tuple) const;
 };
 
 }  // namespace bustub

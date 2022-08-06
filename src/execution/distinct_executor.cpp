@@ -21,27 +21,25 @@ DistinctExecutor::DistinctExecutor(ExecutorContext *exec_ctx, const DistinctPlan
 
 void DistinctExecutor::Init() {
   child_executor_->Init();
-
-  Tuple tuple{};
-  RID rid{};
-  const Schema *child_chema = child_executor_->GetOutputSchema();
-  const uint32_t child_col_cnt = child_chema->GetColumnCount();
-  while (child_executor_->Next(&tuple, &rid)) {
-    DistinctHashTupleWarpper tuple_warpper;
-    for (size_t i = 0; i < child_col_cnt; ++i) {
-      tuple_warpper.tuple_.emplace_back(tuple.GetValue(child_chema, i));
-    }
-    ht_.insert(tuple_warpper);
-  }
-  iter_ = ht_.begin();
+  ht_.clear();
 }
 
 bool DistinctExecutor::Next(Tuple *tuple, RID *rid) {
-  while (iter_ != ht_.end()) {
-    auto values = iter_++->tuple_;
-    *tuple = Tuple(values, GetOutputSchema());
-    *rid = tuple->GetRid();
-    return true;
+  Tuple cur_tuple{};
+  RID cur_rid{};
+  while (child_executor_->Next(&cur_tuple, &cur_rid)) {
+    DistinctHashTupleWarpper tuple_warpper;
+    tuple_warpper.tuple_.reserve(plan_->OutputSchema()->GetColumnCount());
+    const Schema *child_schema = child_executor_->GetOutputSchema();
+    for (const auto &col : plan_->OutputSchema()->GetColumns()) {
+      uint32_t idx = child_schema->GetColIdx(col.GetName());
+      tuple_warpper.tuple_.emplace_back(cur_tuple.GetValue(child_schema, idx));
+    }
+    if (ht_.insert(std::move(tuple_warpper)).second) {
+      *tuple = cur_tuple;
+      *rid = cur_rid;
+      return true;
+    }
   }
   return false;
 }

@@ -489,6 +489,8 @@ TEST_F(ExecutorTest, SimpleHashJoinTest) {
 
   std::vector<Tuple> result_set{};
   GetExecutionEngine()->Execute(join_plan.get(), &result_set, GetTxn(), GetExecutorContext());
+  result_set.clear();
+  GetExecutionEngine()->Execute(join_plan.get(), &result_set, GetTxn(), GetExecutorContext());
   ASSERT_EQ(result_set.size(), 100);
 
   for (const auto &tuple : result_set) {
@@ -504,6 +506,70 @@ TEST_F(ExecutorTest, SimpleHashJoinTest) {
     ASSERT_LT(t4_col_b, TEST4_SIZE);
     ASSERT_LT(t6_col_b, TEST6_SIZE);
     ASSERT_EQ(t4_col_b, t6_col_b);
+  }
+}
+
+// SELECT test_7.*, test_9.* FROM test_7 JOIN test_9 ON test_7.colC = test_9.colB;
+TEST_F(ExecutorTest, HashJoinTest) {
+  // Construct sequential scan of table test_7
+  const Schema *out_schema1{};
+  std::unique_ptr<AbstractPlanNode> scan_plan1{};
+  {
+    auto *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_7");
+    auto &schema = table_info->schema_;
+    auto *col_a = MakeColumnValueExpression(schema, 0, "colA");
+    auto *col_b = MakeColumnValueExpression(schema, 0, "colB");
+    auto *col_c = MakeColumnValueExpression(schema, 0, "colC");
+    out_schema1 = MakeOutputSchema({{"colA", col_a}, {"colB", col_b}, {"colC", col_c}});
+    scan_plan1 = std::make_unique<SeqScanPlanNode>(out_schema1, nullptr, table_info->oid_);
+  }
+
+  // Construct sequential scan of table test_9
+  const Schema *out_schema2{};
+  std::unique_ptr<AbstractPlanNode> scan_plan2{};
+  {
+    auto *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_9");
+    auto &schema = table_info->schema_;
+    auto *col_a = MakeColumnValueExpression(schema, 0, "colA");
+    auto *col_b = MakeColumnValueExpression(schema, 0, "colB");
+    out_schema2 = MakeOutputSchema({{"colA", col_a}, {"colB", col_b}});
+    scan_plan2 = std::make_unique<SeqScanPlanNode>(out_schema2, nullptr, table_info->oid_);
+  }
+
+  // Construct the join plan
+  const Schema *out_schema{};
+  std::unique_ptr<HashJoinPlanNode> join_plan{};
+  {
+    auto *table7_col_a = MakeColumnValueExpression(*out_schema1, 1, "colA");
+    auto *table7_col_b = MakeColumnValueExpression(*out_schema1, 1, "colB");
+    auto *table7_col_c = MakeColumnValueExpression(*out_schema1, 1, "colC");
+
+    auto *table9_col_a = MakeColumnValueExpression(*out_schema2, 0, "colA");
+    auto *table9_col_b = MakeColumnValueExpression(*out_schema2, 0, "colB");
+
+    out_schema = MakeOutputSchema({
+        {"table7_colA", table7_col_a},
+        {"table7_colB", table7_col_b},
+        {"table7_colC", table7_col_c},
+        {"table9_colA", table9_col_a},
+        {"table9_colB", table9_col_b},
+    });
+
+    // Join on table7.colC = table9.colB
+    join_plan = std::make_unique<HashJoinPlanNode>(
+        out_schema, std::vector<const AbstractPlanNode *>{scan_plan2.get(), scan_plan1.get()}, table9_col_b,
+        table7_col_c);
+  }
+
+  std::vector<Tuple> result_set{};
+  GetExecutionEngine()->Execute(join_plan.get(), &result_set, GetTxn(), GetExecutorContext());
+  ASSERT_EQ(result_set.size(), 100);
+
+  for (const auto &tuple : result_set) {
+    const auto t7_col_c = tuple.GetValue(out_schema, out_schema->GetColIdx("table7_colC")).GetAs<int32_t>();
+    const auto t9_col_b = tuple.GetValue(out_schema, out_schema->GetColIdx("table9_colB")).GetAs<int32_t>();
+
+    ASSERT_EQ(t7_col_c, t9_col_b);
   }
 }
 

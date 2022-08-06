@@ -56,7 +56,7 @@ bool AggregationExecutor::Next(Tuple *tuple, RID *rid) {
     std::vector<Value> res;
     res.reserve(output_schema->GetColumnCount());
     for (const auto &e : output_schema->GetColumns()) {
-      const auto ae = reinterpret_cast<const AggregateValueExpression *>(e.GetExpr());
+      const auto ae = dynamic_cast<const AggregateValueExpression *>(e.GetExpr());
       res.emplace_back(ae->EvaluateAggregate(k.group_bys_, v.aggregates_));
     }
     *tuple = Tuple(res, output_schema);

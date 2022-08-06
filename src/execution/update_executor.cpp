@@ -35,8 +35,12 @@ bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
     auto updated_tuple = GenerateUpdatedTuple(cur_tuple);
     if (table_info_->table_->UpdateTuple(updated_tuple, cur_rid, txn)) {
       for (auto index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
-        index_info->index_->DeleteEntry(cur_tuple, cur_rid, txn);
-        index_info->index_->InsertEntry(updated_tuple, cur_rid, txn);
+        Tuple cur_key =
+            cur_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
+        Tuple updated_key = updated_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_,
+                                                       index_info->index_->GetKeyAttrs());
+        index_info->index_->DeleteEntry(cur_key, cur_rid, txn);
+        index_info->index_->InsertEntry(updated_key, cur_rid, txn);
       }
     } else {
       throw Exception("failed to update a tuple");

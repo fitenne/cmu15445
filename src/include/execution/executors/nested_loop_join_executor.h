@@ -65,7 +65,6 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
   const Schema *right_schema_{};
 
   std::optional<Tuple> cur_left_tuple_{};
-  std::vector<Value> cur_left_tuple_values_{};
 };
 
 }  // namespace bustub

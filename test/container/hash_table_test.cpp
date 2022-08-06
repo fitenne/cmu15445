@@ -286,7 +286,7 @@ TEST(HashTableTest, ConcurrentTest) {
  * did not find a way to mock hash function
  * manually modify hash function to return the key itself before run this test
  */
-TEST(HashTableTest, ScaleTest2) {
+TEST(HashTableTest, DISABLED_ScaleTest2) {
   using KeyType = int;
   using ValueType = int;
   auto *disk_manager = new DiskManager("test.db");
