@@ -37,20 +37,27 @@ class LockManager {
 
   class LockRequest {
    public:
-    LockRequest(txn_id_t txn_id, LockMode lock_mode) : txn_id_(txn_id), lock_mode_(lock_mode), granted_(false) {}
+    LockRequest(txn_id_t txn_id, LockMode lock_mode) : txn_id_(txn_id), lock_mode_(lock_mode) {}
 
     txn_id_t txn_id_;
     LockMode lock_mode_;
-    bool granted_;
+    bool wouned_{};
   };
 
   class LockRequestQueue {
    public:
-    std::list<LockRequest> request_queue_;
+    std::list<LockRequest> granted_queue_;
+    std::list<LockRequest> wait_queue_;
+    std::mutex mut_{};
     // for notifying blocked transactions on this rid
     std::condition_variable cv_;
     // txn_id of an upgrading transaction (if any)
     txn_id_t upgrading_ = INVALID_TXN_ID;
+
+    bool xlock_{};
+    size_t slock_count_{};
+
+    bool Compatible() const;
   };
 
  public:
@@ -109,6 +116,12 @@ class LockManager {
 
   /** Lock table for lock requests. */
   std::unordered_map<RID, LockRequestQueue> lock_table_;
+
+  bool SelfCheck(Transaction *txn, LockMode lock_mode);
+
+  LockRequestQueue *GetLockRequestQueue(const RID &rid);
+
+  size_t TryWound(Transaction *txn, LockRequestQueue *lrq);
 };
 
 }  // namespace bustub
