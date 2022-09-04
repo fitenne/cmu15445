@@ -33,7 +33,13 @@ bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
   auto txn = exec_ctx_->GetTransaction();
   while (child_executor_->Next(&cur_tuple, &cur_rid)) {
     auto updated_tuple = GenerateUpdatedTuple(cur_tuple);
+    if (txn->GetIsolationLevel() == IsolationLevel::REPEATABLE_READ) {
+      exec_ctx_->GetLockManager()->LockUpgrade(txn, cur_rid);
+    } else {
+      exec_ctx_->GetLockManager()->LockExclusive(txn, cur_rid);
+    }
     if (table_info_->table_->UpdateTuple(updated_tuple, cur_rid, txn)) {
+      exec_ctx_->GetLockManager()->LockExclusive(txn, updated_tuple.GetRid());
       for (auto index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
         Tuple cur_key =
             cur_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
@@ -41,6 +47,9 @@ bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
                                                        index_info->index_->GetKeyAttrs());
         index_info->index_->DeleteEntry(cur_key, cur_rid, txn);
         index_info->index_->InsertEntry(updated_key, cur_rid, txn);
+        txn->GetIndexWriteSet()->emplace_back(updated_tuple.GetRid(), table_info_->oid_, WType::UPDATE, updated_tuple,
+                                              index_info->index_oid_, exec_ctx_->GetCatalog());
+        txn->GetIndexWriteSet()->back().old_tuple_ = cur_tuple;
       }
     } else {
       throw Exception("failed to update a tuple");

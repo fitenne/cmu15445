@@ -13,7 +13,9 @@
 #include "execution/executors/seq_scan_executor.h"
 #include "catalog/catalog.h"
 #include "catalog/schema.h"
+#include "common/exception.h"
 #include "common/logger.h"
+#include "concurrency/transaction.h"
 #include "storage/table/table_iterator.h"
 
 namespace bustub {
@@ -34,8 +36,13 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
   auto predicate = plan_->GetPredicate();
   Tuple cur_tuple{};
 
+  Transaction *txn = exec_ctx_->GetTransaction();
   while (iterator_ != end_) {
     cur_tuple = (*iterator_++);
+    if (txn->GetIsolationLevel() != IsolationLevel::READ_UNCOMMITTED) {
+      exec_ctx_->GetLockManager()->LockShared(txn, cur_tuple.GetRid());
+    }
+
     if (predicate != nullptr && !predicate->Evaluate(&cur_tuple, plan_->OutputSchema()).GetAs<bool>()) {
       continue;
     }
@@ -45,6 +52,9 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
     }
     *tuple = Tuple(res, plan_->OutputSchema());
     *rid = cur_tuple.GetRid();
+    if (txn->GetIsolationLevel() == IsolationLevel::READ_COMMITTED) {
+      exec_ctx_->GetLockManager()->Unlock(txn, cur_tuple.GetRid());
+    }
     return true;
   }
   return false;

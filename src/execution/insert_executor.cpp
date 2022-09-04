@@ -39,11 +39,17 @@ bool InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
   if (plan_->IsRawInsert()) {
     for (auto &t : plan_->RawValues()) {
       cur_tuple = Tuple(t, &table_info_->schema_);
-      table_info_->table_->InsertTuple(cur_tuple, &cur_rid, txn);
+      if (!table_info_->table_->InsertTuple(cur_tuple, &cur_rid, txn)) {
+        throw Exception("failed to insert a tuole");
+      }
+      exec_ctx_->GetLockManager()->LockExclusive(txn, cur_rid);
+
       for (IndexInfo *index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
         auto key = cur_tuple.KeyFromTuple(table_info_->schema_, *index_info->index_->GetKeySchema(),
                                           index_info->index_->GetKeyAttrs());
         index_info->index_->InsertEntry(key, cur_rid, txn);
+        txn->GetIndexWriteSet()->emplace_back(cur_rid, table_info_->oid_, WType::INSERT, cur_tuple,
+                                              index_info->index_oid_, exec_ctx_->GetCatalog());
       }
     }
   } else {

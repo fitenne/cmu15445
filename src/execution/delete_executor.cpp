@@ -32,12 +32,22 @@ bool DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
 
   auto txn = exec_ctx_->GetTransaction();
   while (child_executor_->Next(&cur_tuple, &cur_rid)) {
+    if (txn->GetIsolationLevel() == IsolationLevel::REPEATABLE_READ) {
+      exec_ctx_->GetLockManager()->LockUpgrade(txn, cur_rid);
+    } else {
+      exec_ctx_->GetLockManager()->LockExclusive(txn, cur_rid);
+    }
+
     if (table_info_->table_->MarkDelete(cur_rid, txn)) {
       for (auto index_info : exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_)) {
         Tuple key = cur_tuple.KeyFromTuple(table_info_->schema_, *index_info->index_->GetKeySchema(),
                                            index_info->index_->GetKeyAttrs());
         index_info->index_->DeleteEntry(key, cur_rid, txn);
+        txn->GetIndexWriteSet()->emplace_back(cur_rid, table_info_->oid_, WType::DELETE, cur_tuple,
+                                              index_info->index_oid_, exec_ctx_->GetCatalog());
       }
+    } else {
+      throw Exception("failed to delete a tuple");
     }
   }
   return false;
