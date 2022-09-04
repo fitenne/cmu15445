@@ -41,7 +41,7 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
     }
 
     bool ok = request == lrq->wait_queue_.begin() && lrq->Compatible();
-    if (!ok && TryWound(txn, lrq)) {
+    if (!ok && TryWound(txn, lrq, LockMode::SHARED)) {
       lrq->cv_.notify_all();
       ok = (request == lrq->wait_queue_.begin() && lrq->Compatible());
     }
@@ -73,6 +73,8 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
   lrq->wait_queue_.pop_front();
   lrq->slock_count_++;
   txn->GetSharedLockSet()->emplace(rid);
+  // for (may be) next shared lock request
+  lrq->cv_.notify_all();
   return true;
 }
 
@@ -94,7 +96,7 @@ bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
     }
 
     bool ok = request == lrq->wait_queue_.begin() && lrq->Compatible();
-    if (!ok && TryWound(txn, lrq)) {
+    if (!ok && TryWound(txn, lrq, LockMode::EXCLUSIVE)) {
       lrq->cv_.notify_all();
       ok = (request == lrq->wait_queue_.begin() && lrq->Compatible());
     }
@@ -160,7 +162,7 @@ bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
     }
 
     bool ok = (request == lrq->wait_queue_.begin() && lrq->Compatible());
-    if (!ok && TryWound(txn, lrq)) {
+    if (!ok && TryWound(txn, lrq, LockMode::EXCLUSIVE)) {
       lrq->cv_.notify_all();
       // granted lock may not get released immediately after notify
       ok = (request == lrq->wait_queue_.begin() && lrq->Compatible());
@@ -276,11 +278,12 @@ bool LockManager::LockRequestQueue::Compatible() const {
   return !xlock_ && slock_count_ == 0;
 }
 
-bool LockManager::TryWound(Transaction *txn, LockRequestQueue *lrq) {
+bool LockManager::TryWound(Transaction *txn, LockRequestQueue *lrq, LockMode lock_mode) {
   size_t count{0};
-  const auto wound = [txn, lrq, &count](std::list<LockRequest> &requests, bool granted) -> void {
+  const auto wound = [txn, lrq, lock_mode, &count](std::list<LockRequest> &requests, bool granted) -> void {
     for (auto &request : requests) {
-      if (!request.wouned_ && request.txn_id_ > txn->GetTransactionId()) {
+      if (!request.wouned_ && request.txn_id_ > txn->GetTransactionId() &&
+          !(lock_mode == LockMode::SHARED && request.lock_mode_ == LockMode::SHARED)) {
         Transaction *young_txn = TransactionManager::GetTransaction(request.txn_id_);
         young_txn->SetState(TransactionState::ABORTED);
         if (granted) {

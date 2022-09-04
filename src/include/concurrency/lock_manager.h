@@ -121,7 +121,7 @@ class LockManager {
 
   LockRequestQueue *GetLockRequestQueue(const RID &rid);
 
-  bool TryWound(Transaction *txn, LockRequestQueue *lrq);
+  bool TryWound(Transaction *txn, LockRequestQueue *lrq, LockMode lock_mode);
 };
 
 }  // namespace bustub
