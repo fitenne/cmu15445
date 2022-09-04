@@ -40,16 +40,17 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
       lrq->cv_.notify_all();
     }
 
-    lrq->cv_.wait(lrq_lock);
-
+    lrq->cv_.wait(lrq_lock, [request, lrq, txn] {
+      return txn->GetState() == TransactionState::ABORTED || (request == lrq->wait_queue_.begin() && lrq->Compatible());
+    });
     if (txn->GetState() == TransactionState::ABORTED) {
       lrq->wait_queue_.erase(request);
       throw TransactionAbortException(txn->GetTransactionId(), AbortReason::DEADLOCK);
     }
   }
 
-  lrq->granted_queue_.emplace_back(lrq->wait_queue_.back());
-  lrq->wait_queue_.pop_back();
+  lrq->granted_queue_.emplace_back(lrq->wait_queue_.front());
+  lrq->wait_queue_.pop_front();
   lrq->slock_count_++;
   txn->GetSharedLockSet()->emplace(rid);
   // LOG_DEBUG("[v]slock of %lu to %u", rid.Get(), txn->GetTransactionId());
@@ -57,7 +58,7 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
 }
 
 bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
-  if (!SelfCheck(txn, LockMode::SHARED)) {
+  if (!SelfCheck(txn, LockMode::EXCLUSIVE)) {
     return false;
   }
   if (txn->IsExclusiveLocked(rid)) {
@@ -67,21 +68,23 @@ bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
   LockRequestQueue *lrq = GetLockRequestQueue(rid);
   std::unique_lock lrq_lock{lrq->mut_};
 
-  auto request = lrq->wait_queue_.emplace(lrq->wait_queue_.end(), txn->GetTransactionId(), LockMode::SHARED);
+  auto request = lrq->wait_queue_.emplace(lrq->wait_queue_.end(), txn->GetTransactionId(), LockMode::EXCLUSIVE);
   while (request != lrq->wait_queue_.begin() || !lrq->Compatible()) {
     if (TryWound(txn, lrq) > 0) {
       lrq->cv_.notify_all();
     }
 
-    lrq->cv_.wait(lrq_lock);
+    lrq->cv_.wait(lrq_lock, [request, lrq, txn] {
+      return txn->GetState() == TransactionState::ABORTED || (request == lrq->wait_queue_.begin() && lrq->Compatible());
+    });
     if (txn->GetState() == TransactionState::ABORTED) {
       lrq->wait_queue_.erase(request);
       throw TransactionAbortException(txn->GetTransactionId(), AbortReason::DEADLOCK);
     }
   }
 
-  lrq->granted_queue_.emplace_back(lrq->wait_queue_.back());
-  lrq->wait_queue_.pop_back();
+  lrq->granted_queue_.emplace_back(lrq->wait_queue_.front());
+  lrq->wait_queue_.pop_front();
   lrq->xlock_ = true;
   txn->GetExclusiveLockSet()->emplace(rid);
   return true;
@@ -102,11 +105,11 @@ bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
     throw TransactionAbortException(txn->GetTransactionId(), AbortReason::UPGRADE_CONFLICT);
   }
 
-  lrq->upgrading_ = txn->GetTransactionId();
   auto slock_request =
       std::find_if(lrq->granted_queue_.begin(), lrq->granted_queue_.end(),
                    [txn](const LockRequest &request) -> bool { return request.txn_id_ == txn->GetTransactionId(); });
   BUSTUB_ASSERT(slock_request != lrq->granted_queue_.end(), "slock must exists before upgrade");
+  lrq->upgrading_ = txn->GetTransactionId();
   lrq->granted_queue_.erase(slock_request);
   txn->GetSharedLockSet()->erase(rid);
   --lrq->slock_count_;
@@ -117,16 +120,19 @@ bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
       lrq->cv_.notify_all();
     }
 
-    lrq->cv_.wait(lrq_lock);
+    lrq->cv_.wait(lrq_lock, [request, lrq, txn] {
+      return txn->GetState() == TransactionState::ABORTED || (request == lrq->wait_queue_.begin() && lrq->Compatible());
+    });
     if (txn->GetState() == TransactionState::ABORTED) {
+      lrq->upgrading_ = INVALID_TXN_ID;
       lrq->wait_queue_.erase(request);
       throw TransactionAbortException(txn->GetTransactionId(), AbortReason::DEADLOCK);
     }
   }
 
   lrq->upgrading_ = INVALID_TXN_ID;
-  lrq->granted_queue_.emplace_back(lrq->wait_queue_.back());
-  lrq->wait_queue_.pop_back();
+  lrq->granted_queue_.emplace_back(lrq->wait_queue_.front());
+  lrq->wait_queue_.pop_front();
   lrq->xlock_ = true;
   txn->GetExclusiveLockSet()->emplace(rid);
   return true;
@@ -140,18 +146,18 @@ bool LockManager::Unlock(Transaction *txn, const RID &rid) {
     std::scoped_lock lrq_lock{lrq->mut_};
     bool should_notify{false};
     if (txn->GetSharedLockSet()->erase(rid) != 0) {
-      BUSTUB_ASSERT(!lrq->xlock_, "slock and xlockmust not exists at the same time");
+      // BUSTUB_ASSERT(!lrq->xlock_, "slock and xlockmust not exists at the same time");
       is_slock = true;
-      if (--lrq->slock_count_ == 0) {
-        should_notify |= true;
-      }
+      // if (--lrq->slock_count_ == 0) {
+      //   should_notify |= true;
+      // }
       success = true;
       // LOG_DEBUG("[x]slock of %lu to %u", rid.Get(), txn->GetTransactionId());
     }
     if (txn->GetExclusiveLockSet()->erase(rid) != 0) {
-      BUSTUB_ASSERT(lrq->slock_count_ == 0, "slock and xlockmust not exists at the same time");
-      lrq->xlock_ = false;
-      should_notify |= true;
+      // BUSTUB_ASSERT(lrq->slock_count_ == 0, "slock and xlockmust not exists at the same time");
+      // lrq->xlock_ = false;
+      // should_notify |= true;
       success = true;
       // LOG_DEBUG("[x]xlock of %lu to %u", rid.Get(), txn->GetTransactionId());
     }
@@ -159,17 +165,13 @@ bool LockManager::Unlock(Transaction *txn, const RID &rid) {
     if (success) {
       auto it = std::find_if(lrq->granted_queue_.begin(), lrq->granted_queue_.end(),
                              [txn](const LockRequest &request) { return request.txn_id_ == txn->GetTransactionId(); });
+      // LOG_DEBUG("txn %u unlocked %lu", txn->GetTransactionId(), rid.Get());
       BUSTUB_ASSERT(it != lrq->granted_queue_.end(), "lock request must exists in the granted queue");
-      // if (!it->wouned_) {
-      //   if (it->lock_mode_ == LockMode::SHARED) {
-      //     if (--lrq->slock_count_ == 0) {
-      //       should_notify |= true;
-      //     }
-      //   } else {
-      //     lrq->xlock_ = false;
-      //     should_notify |= true;
-      //   }
-      // }
+      if (!it->wouned_) {
+        it->lock_mode_ == LockMode::SHARED ? void(--lrq->slock_count_) : void(lrq->xlock_ = false);
+      }
+      should_notify |= (lrq->slock_count_ == 0);
+      should_notify |= (!lrq->xlock_);
       lrq->granted_queue_.erase(it);
     }
 
@@ -184,9 +186,6 @@ bool LockManager::Unlock(Transaction *txn, const RID &rid) {
     }
   }
 
-  if (!success) {
-    LOG_WARN("didn't find lock request specified in unlock");
-  }
   return success;
 }
 
@@ -228,45 +227,54 @@ bool LockManager::LockRequestQueue::Compatible() const {
 }
 
 size_t LockManager::TryWound(Transaction *txn, LockRequestQueue *lrq) {
-  // const auto wound = [txn, lrq](std::list<LockRequest> &requests) -> size_t {
-  const auto wound = [txn](std::list<LockRequest> &requests) -> size_t {
-    size_t count{0};
+  size_t count{0};
+  const auto wound = [txn, lrq, &count](std::list<LockRequest> &requests, bool granted) -> void {
+    // const auto wound = [txn](std::list<LockRequest> &requests) -> size_t {
     for (auto &request : requests) {
-      if (request.txn_id_ > txn->GetTransactionId()) {
+      if (!request.wouned_ && request.txn_id_ > txn->GetTransactionId()) {
         Transaction *young_txn = TransactionManager::GetTransaction(request.txn_id_);
         young_txn->SetState(TransactionState::ABORTED);
-        // if (request.lock_mode_ == LockMode::SHARED) {
-        //   --lrq->slock_count_;
-        // } else {
-        //   lrq->xlock_ = false;
-        // }
+        if (granted) {
+          if (request.lock_mode_ == LockMode::SHARED) {
+            --lrq->slock_count_;
+          } else {
+            lrq->xlock_ = false;
+          }
+        }
+        request.wouned_ = true;
+        ++count;
       }
-      ++count;
     }
-    return count;
   };
 
   // notify txn only with granted request will make no different anyway
-  (void)wound(lrq->granted_queue_);
-
-  return wound(lrq->wait_queue_);
+  wound(lrq->granted_queue_, true);
+  wound(lrq->wait_queue_, false);
+  return count;
 
   // size_t count{0};
   // for (auto it = lrq->granted_queue_.begin(); it != lrq->granted_queue_.end(); ++it) {
-  //   if (it->txn_id_ > txn->GetTransactionId()) {
+  //   if (!it->wouned_ && it->txn_id_ > txn->GetTransactionId()) {
   //     Transaction *young_txn = TransactionManager::GetTransaction(it->txn_id_);
   //     young_txn->SetState(TransactionState::ABORTED);
   //     it->wouned_ = true;
+  //     if (it->lock_mode_ == LockMode::SHARED) {
+  //       --lrq->slock_count_;
+  //     } else {
+  //       lrq->xlock_ = false;
+  //     }
+  //     ++count;
   //     LOG_DEBUG("%u wound %u in granted queue", txn->GetTransactionId(), it->txn_id_);
   //   }
   // }
   // for (auto it = lrq->wait_queue_.begin(); it != lrq->wait_queue_.end(); ++it) {
-  //   if (it->txn_id_ > txn->GetTransactionId()) {
+  //   if (!it->wouned_ && it->txn_id_ > txn->GetTransactionId()) {
   //     Transaction *young_txn = TransactionManager::GetTransaction(it->txn_id_);
   //     young_txn->SetState(TransactionState::ABORTED);
+  //     it->wouned_ = true;
+  //     ++count;
   //     LOG_DEBUG("%u wound %u in wait queue", txn->GetTransactionId(), it->txn_id_);
   //   }
-  //   ++count;
   // }
   // return count;
 }
